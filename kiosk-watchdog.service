@@ -1,0 +1,13 @@
+[Unit]
+Description=Siemens IOT2050 Kiosk Self-Healing Watchdog
+After=pid-app.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/bin/bash /opt/pid-tuning-app/kiosk-watchdog.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

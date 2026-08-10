@@ -1,0 +1,16 @@
+[Unit]
+Description=Siemens IOT2050 PID Tuning Application Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/pid-tuning-app
+ExecStart=/usr/bin/node --expose-gc server.js
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+Environment=PORT=3000
+
+[Install]
+WantedBy=multi-user.target
