@@ -776,3 +776,27 @@ body.low-perf .btn {
 body.low-perf .status-dot {
     animation: none !important;
 }
+
+/* ── Offline Overlay Banner ─────────────────────── */
+.chart-offline-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(7, 13, 26, 0.88);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  border-radius: 8px;
+  border: 2px dashed rgba(239, 68, 68, 0.6);
+}
+.offline-overlay-content {
+  text-align: center;
+  color: #f87171;
+  padding: 20px;
+}
+.offline-icon { font-size: 40px; margin-bottom: 8px; }
+.offline-title { font-size: 20px; font-weight: 800; letter-spacing: 1.5px; color: #ef4444; text-shadow: 0 0 10px rgba(239,68,68,0.5); }
+.offline-subtitle { font-size: 13px; color: #94a3b8; margin-top: 6px; }
+.offline-spinner { font-size: 13px; color: #fbbf24; margin-top: 12px; font-weight: 600; }
+

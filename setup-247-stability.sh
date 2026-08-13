@@ -32,7 +32,7 @@ systemctl restart systemd-logind || true
 # 2. Disable Kernel Console Blanking
 echo "--> [2/6] Disabling Linux kernel console blanking..."
 if [ -f /sys/module/kernel/parameters/consoleblank ]; then
-  echo 0 > /sys/module/kernel/parameters/consoleblank || true
+  echo 0 > /sys/module/kernel/parameters/consoleblank 2>/dev/null || true
 fi
 if grep -q "consoleblank" /etc/sysctl.conf; then
   sed -i 's/consoleblank=.*/consoleblank=0/' /etc/sysctl.conf
@@ -94,7 +94,7 @@ while true; do
     --js-flags="--max-old-space-size=256" \
     --autoplay-policy=no-user-gesture-required \
     --force-device-scale-factor=1.0 \
-    http://localhost:3000/
+    http://localhost:3000/splash.html
   
   sleep 2
 done

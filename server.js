@@ -90,7 +90,7 @@ loadBlocks();
 loadConfig();
 let history = {};               // blockId → [{sp,pv,output,mode,timestamp}]
 let pollerTimer = null;
-const POLL_MS      = 500;
+const POLL_MS      = 100;       // Fast 100ms (10Hz) PLC Polling Loop
 const MAX_HISTORY  = 10000;
 
 const LOG_INTERVAL_MS = 5000;
@@ -251,6 +251,28 @@ app.delete('/api/blocks/:id', (req, res) => {
   delete history[id];
   saveBlocks();
   res.json({ success: true });
+});
+
+// ── Reorder Blocks ────────────────────────────
+app.post('/api/blocks/reorder', (req, res) => {
+  const { order } = req.body;
+  if (!Array.isArray(order)) return res.status(400).json({ error: 'Order must be an array of IDs' });
+
+  const newBlocks = {};
+  // Insert blocks in new order
+  order.forEach(id => {
+    if (blocks[id]) {
+      newBlocks[id] = blocks[id];
+    }
+  });
+  // Append any missing blocks just in case
+  Object.keys(blocks).forEach(id => {
+    if (!newBlocks[id]) newBlocks[id] = blocks[id];
+  });
+  
+  blocks = newBlocks;
+  saveBlocks();
+  res.json({ success: true, blocks: Object.values(blocks) });
 });
 
 // ── Read parameters from PLC ──────────────────
@@ -579,6 +601,16 @@ wss.on('connection', (ws) => {
     connected: appMode !== 'disconnected',
     mode: appMode,
   }));
+
+  ws.on('message', (data) => {
+    ws.isAlive = true;
+    try {
+      const msg = JSON.parse(data);
+      if (msg.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+      }
+    } catch (e) {}
+  });
 
   // Send latest data for all blocks
   Object.values(blocks).forEach(b => {

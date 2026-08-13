@@ -26,9 +26,17 @@ while true; do
 
   # 3. Check System RAM Pressure
   FREE_RAM_MB=$(free -m | awk '/^Mem:/{print $4}')
-  if [ "$FREE_RAM_MB" -lt 80 ]; then
+  if [ "$FREE_RAM_MB" -lt 100 ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ⚠️ Low RAM detected (${FREE_RAM_MB}MB free). Clearing PageCaches..."
     sync && echo 3 > /proc/sys/vm/drop_caches || true
+    
+    if [ "$FREE_RAM_MB" -lt 50 ]; then
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] 🚨 Critical RAM pressure! Soft-restarting Kiosk Display..."
+      pkill -f "chromium" || true
+      sleep 2
+      systemctl restart kiosk.service || true
+      sleep 10
+    fi
   fi
 
   # 4. Off-Peak Soft Refresh (Every day at 03:00 AM)
@@ -41,5 +49,5 @@ while true; do
     sleep 60
   fi
 
-  sleep 30
+  sleep 20
 done

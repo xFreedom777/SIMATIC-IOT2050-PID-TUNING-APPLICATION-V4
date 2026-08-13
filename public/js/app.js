@@ -68,6 +68,22 @@ const DEFAULT_OFFSETS = {
 };
 let currentOffsets = { ...DEFAULT_OFFSETS };
 
+// ── Smart Idle & Memory Auto-Refresh (5-Min Kiosk Auto-Clean) ───
+let lastUserActivityTime = Date.now();
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 mins
+
+['click', 'touchstart', 'mousemove', 'keydown'].forEach(evt => {
+  window.addEventListener(evt, () => { lastUserActivityTime = Date.now(); }, { passive: true });
+});
+
+setInterval(() => {
+  const isIdle = (Date.now() - lastUserActivityTime) >= IDLE_TIMEOUT_MS;
+  if (isIdle && State.paramLocked) {
+    console.log('🌙 System idle for 5 mins with locked params. Refreshing Kiosk UI for V8 heap cleanup...');
+    window.location.reload();
+  }
+}, 15000);
+
 // ══════════════════════════════════════════════
 // Init
 // ══════════════════════════════════════════════
@@ -82,6 +98,7 @@ window.onload = async () => {
   connectWebSocket();
   await fetchStatus();
   setInterval(updateAnalytics, 2000);
+  startWSHeartbeat();
 
   // Lock button right-click → Change PIN
   const lb = document.getElementById('lockBtn');
@@ -99,23 +116,48 @@ window.onload = async () => {
 // ══════════════════════════════════════════════
 // WebSocket
 // ══════════════════════════════════════════════
+let wsPingTimer = null;
+let lastWsMessageTime = Date.now();
+
+function startWSHeartbeat() {
+  clearInterval(wsPingTimer);
+  wsPingTimer = setInterval(() => {
+    if (State.ws && State.ws.readyState === WebSocket.OPEN) {
+      State.ws.send(JSON.stringify({ type: 'ping' }));
+    }
+    // If no message received for over 20s or WS is closed, trigger reconnection
+    const isStale = (Date.now() - lastWsMessageTime) > 20000;
+    if (isStale || !State.ws || State.ws.readyState === WebSocket.CLOSED) {
+      console.warn('[WS] Heartbeat timeout or dead connection. Forcing reconnect...');
+      try { if (State.ws) State.ws.close(); } catch(e) {}
+      connectWebSocket();
+    }
+  }, 10000);
+}
+
 function connectWebSocket() {
   try {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     let host = location.hostname === 'localhost' ? '127.0.0.1' : location.hostname;
     let port = location.port ? ':' + location.port : '';
     
+    if (State.ws) {
+      try { State.ws.onopen = State.ws.onmessage = State.ws.onerror = State.ws.onclose = null; State.ws.close(); } catch(e){}
+    }
+
     State.ws = new WebSocket(`${proto}//${host}${port}/`);
     State.ws.onopen    = () => {
       console.log('[WS] Connected');
+      lastWsMessageTime = Date.now();
       toast('WebSocket Connected!', 'success', 2000);
     };
     State.ws.onmessage = (evt) => {
+      lastWsMessageTime = Date.now();
       const msg = JSON.parse(evt.data);
       if (msg.type === 'status') {
         onStatus(msg);
         if (msg.reason === 'ghost_timeout') {
-toast('Ghost connection cleared! Reconnecting in 20s...', 'info', 3000);
+          toast('Ghost connection cleared! Reconnecting in 20s...', 'info', 3000);
           setTimeout(() => {
             if (State.mode === 'disconnected') scheduleAutoConnect(20000);
           }, 1000);
@@ -126,15 +168,12 @@ toast('Ghost connection cleared! Reconnecting in 20s...', 'info', 3000);
     };
     State.ws.onerror = (err) => {
       console.error('[WS] Error:', err);
-      toast('WebSocket Error! Connection failed.', 'error', 10000);
     };
     State.ws.onclose = () => {
-      toast('WebSocket Disconnected. Reconnecting...', 'warning');
-      setTimeout(connectWebSocket, 3000);
+      console.warn('[WS] Closed. Will reconnect via heartbeat watcher...');
     };
   } catch (err) {
     console.error('[WS] Setup Error:', err);
-    setTimeout(connectWebSocket, 5000);
   }
 }
 
@@ -303,17 +342,21 @@ async function toggleConnect(isAuto = false) {
     
     if (!ip) return toast('Enter PLC IP address', 'warning');
     const btn = document.getElementById('connectBtn');
-    btn.textContent = '⏳ Connecting (Click to retry)...';
-    // NOT disabling the button!
+    btn.textContent = isAuto ? '⏳ Auto-Connecting...' : '⏳ Connecting...';
     try {
       await api('POST', '/api/connect', { ip, rack, slot });
       
       toast(`Connected to S7-1200 at ${ip}`, 'success');
       State.mode = 'plc';
+      window._isAutoRecovering = false;
       updateStatusUI();
     } catch (e) {
-      toast(e.message, 'error'); 
+      if (!isAuto) toast(e.message, 'error'); 
       btn.innerHTML = '<span>⚡</span> Connect to PLC'; 
+      window._isAutoRecovering = false;
+      if (State.mode === 'disconnected') {
+        setTimeout(() => scheduleAutoConnect(5000), 5000);
+      }
     }
   }
 }
@@ -329,12 +372,14 @@ function updateStatusUI() {
   const simBtn     = document.getElementById('simBtn');
   const readBtn    = document.getElementById('readBtn');
   const offsetBtn  = document.getElementById('offsetBtn');
+  const overlay    = document.getElementById('chartOfflineOverlay');
   const m = State.mode;
 
   dot.className    = `status-dot ${m === 'plc' ? 'connected' : m === 'simulation' ? 'simulating' : ''}`;
   modeChip.className = `mode-chip ${m === 'plc' ? 'plc' : m === 'simulation' ? 'simulation' : 'offline'}`;
 
   if (m === 'plc') {
+    if (overlay) overlay.style.display = 'none';
     statusTxt.textContent = 'PLC Connected';
     modeChip.textContent  = 'LIVE PLC';
     connectBtn.innerHTML  = '<span>⛔</span> Disconnect';
@@ -344,6 +389,7 @@ function updateStatusUI() {
     readBtn.disabled = false;
     offsetBtn.disabled = false;
   } else if (m === 'simulation') {
+    if (overlay) overlay.style.display = 'none';
     statusTxt.textContent = 'Simulation Running';
     modeChip.textContent  = 'SIMULATION';
     connectBtn.innerHTML  = '<span>⚡</span> Connect to PLC';
@@ -354,6 +400,7 @@ function updateStatusUI() {
     readBtn.disabled = true;
     offsetBtn.disabled = true;
   } else {
+    if (overlay) overlay.style.display = 'flex';
     statusTxt.textContent = 'Disconnected';
     modeChip.textContent  = 'OFFLINE';
     connectBtn.innerHTML  = '<span>⚡</span> Connect to PLC';
@@ -364,6 +411,8 @@ function updateStatusUI() {
     simBtn.textContent = '🔬 Start Simulation';
     readBtn.disabled = true;
     offsetBtn.disabled = true;
+    // Automatically trigger continuous background reconnect
+    scheduleAutoConnect(3000);
   }
 }
 
@@ -420,20 +469,56 @@ function renderBlockList() {
       <div class="empty-text text-sm">No loops added yet</div></div>`;
     return;
   }
-  list.innerHTML = ids.map(id => {
+  list.innerHTML = ids.map((id, index) => {
     const b = State.blocks[id];
     const active = id === State.selectedBlockId ? ' active' : '';
+    const upBtn = index > 0 ? `<button class="btn btn-xs btn-ghost" onclick="moveBlock('${id}', -1, event)" style="padding: 2px 6px;">▲</button>` : `<div style="width: 24px;"></div>`;
+    const downBtn = index < ids.length - 1 ? `<button class="btn btn-xs btn-ghost" onclick="moveBlock('${id}', 1, event)" style="padding: 2px 6px;">▼</button>` : `<div style="width: 24px;"></div>`;
+    
     return `<div class="block-item${active}" onclick="selectBlock('${id}')" id="blockItem_${id}">
       <div class="block-dot" data-block-dot="${id}"></div>
       <div class="block-info">
         <div class="block-name">${b.name}</div>
         <div class="block-sub">DB${b.dbNumber}${b.pvUnit ? ` • ${b.pvUnit}` : ''}</div>
       </div>
+      <div style="display:flex; flex-direction:column; gap:2px; margin-right: 5px;">
+        ${upBtn}
+        ${downBtn}
+      </div>
       <button class="btn btn-xs btn-ghost block-del" onclick="deleteBlock('${id}',event)">✕</button>
     </div>`;
   }).join('');
   
   if (typeof dlUpdateTopicList === 'function') dlUpdateTopicList();
+}
+
+async function moveBlock(id, dir, event) {
+  event.stopPropagation();
+  const ids = Object.keys(State.blocks);
+  const idx = ids.indexOf(id);
+  if (idx < 0) return;
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= ids.length) return;
+  
+  // Swap
+  const temp = ids[idx];
+  ids[idx] = ids[newIdx];
+  ids[newIdx] = temp;
+  
+  try {
+    const data = await api('POST', '/api/blocks/reorder', { order: ids });
+    
+    // Update local state to match new order
+    const newBlocks = {};
+    data.blocks.forEach(b => {
+      newBlocks[b.id] = b;
+    });
+    State.blocks = newBlocks;
+    
+    renderBlockList();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 }
 
 function selectBlock(id) {
@@ -698,14 +783,13 @@ function pushChartData(blockId, sp, pv, output, ts) {
     State.chart.data.datasets[0].data = cd.sp;
     State.chart.data.datasets[1].data = cd.pv;
     State.chart.data.datasets[2].data = cd.out;
-    if (State.lowPerfMode) {
-      const now = Date.now();
-      if (now - State.lastChartUpdate > 1000) {
-        State.chart.update('none'); // Update without animation
-        State.lastChartUpdate = now;
-      }
-    } else {
-      State.chart.update();
+    
+    // Smooth Canvas Throttle for Edge Devices (Max 5 canvas draws/sec)
+    const now = Date.now();
+    const minInterval = State.lowPerfMode ? 1000 : 200; 
+    if (now - (State.lastChartUpdate || 0) >= minInterval) {
+      State.chart.update('none'); // Draw frame without costly animation
+      State.lastChartUpdate = now;
     }
   }
 }
@@ -1586,8 +1670,12 @@ setTimeout(checkUsbStatus, 1000);
   }, 1500);
 })();
 
-// ── Feature 2: Unified Auto-Connect ──────
-function scheduleAutoConnect(delay = 20000) {
+// ── Feature 2: Persistent Auto-Connect Loop ──────
+function scheduleAutoConnect(delay = 5000) {
+  if (State.mode !== 'disconnected') {
+    window._isAutoRecovering = false;
+    return;
+  }
   if (window._isAutoRecovering) return; // Already recovering
   window._isAutoRecovering = true;
   clearTimeout(window._autoConnectTimer);
@@ -1595,21 +1683,14 @@ function scheduleAutoConnect(delay = 20000) {
   const btn = document.getElementById('connectBtn');
   if (btn) {
     btn.classList.add('ring-green');
-    btn.disabled = true;
-    btn.innerHTML = '⏳ Auto-Recovering...';
+    btn.innerHTML = '⏳ Auto-Connecting...';
   }
   
-  let cd = delay / 1000;
-  toast('🤖 Auto-Connect scheduled in ' + cd + 's...', 'warning', delay);
-  
   window._autoConnectTimer = setTimeout(() => {
-    if (btn) {
-      btn.classList.remove('ring-green');
-      btn.disabled = false;
-    }
+    if (btn) btn.classList.remove('ring-green');
+    window._isAutoRecovering = false;
     if (State.mode === 'disconnected') {
-      window._isAutoRecovering = false; // reset flag before calling
-      toggleConnect(true); // Call the manual function!
+      toggleConnect(true); // Automatically attempt connection
     }
   }, delay);
 }
