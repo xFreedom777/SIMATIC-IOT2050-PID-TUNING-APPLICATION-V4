@@ -25,11 +25,13 @@ while true; do
   fi
 
   # 3. Check System RAM Pressure
-  FREE_RAM_MB=$(free -m | awk '/^Mem:/{print $4}')
+  FREE_RAM_MB=$(free -m | awk '/^Mem:/{print $7}')
   if [ "$FREE_RAM_MB" -lt 100 ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ⚠️ Low RAM detected (${FREE_RAM_MB}MB free). Clearing PageCaches..."
     sync && echo 3 > /proc/sys/vm/drop_caches || true
     
+    # Re-check available RAM after dropping caches
+    FREE_RAM_MB=$(free -m | awk '/^Mem:/{print $7}')
     if [ "$FREE_RAM_MB" -lt 50 ]; then
       echo "[$(date '+%Y-%m-%d %H:%M:%S')] 🚨 Critical RAM pressure! Soft-restarting Kiosk Display..."
       pkill -f "chromium" || true

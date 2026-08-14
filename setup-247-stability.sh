@@ -101,12 +101,28 @@ done
 EOF
 chmod +x "${USER_HOME}/.xinitrc"
 
-# 5. Install Watchdog script
-echo "--> [5/6] Installing Self-Healing Watchdog script..."
+# 5. RAM Tmpfs Protection & Ext4 Error Policy
+echo "--> [5/7] Configuring /etc/fstab for Tmpfs and Ext4 policies..."
+# Ensure Ext4 errors=continue is set on root (prevents ro mount on non-critical errors)
+sed -i 's/errors=remount-ro/errors=continue/g' /etc/fstab
+
+# Add tmpfs for high-write directories to save SD Card lifecycle
+if ! grep -q "tmpfs /var/log" /etc/fstab; then
+  echo "tmpfs /var/log tmpfs defaults,noatime,nosuid,mode=0755,size=100m 0 0" >> /etc/fstab
+fi
+if ! grep -q "tmpfs /tmp" /etc/fstab; then
+  echo "tmpfs /tmp tmpfs defaults,noatime,nosuid,size=100m 0 0" >> /etc/fstab
+fi
+if ! grep -q "tmpfs /var/tmp" /etc/fstab; then
+  echo "tmpfs /var/tmp tmpfs defaults,noatime,nosuid,size=50m 0 0" >> /etc/fstab
+fi
+
+# 6. Install Watchdog script
+echo "--> [6/7] Installing Self-Healing Watchdog script..."
 chmod +x "${APP_DIR}/kiosk-watchdog.sh" 2>/dev/null || true
 
-# 6. Install & Enable Systemd Services
-echo "--> [6/6] Registering production Systemd services..."
+# 7. Install & Enable Systemd Services
+echo "--> [7/7] Registering production Systemd services..."
 cp "${APP_DIR}/pid-app.service" /etc/systemd/system/ 2>/dev/null || true
 cp "${APP_DIR}/kiosk-watchdog.service" /etc/systemd/system/ 2>/dev/null || true
 cp "${APP_DIR}/kiosk.service" /etc/systemd/system/ 2>/dev/null || true

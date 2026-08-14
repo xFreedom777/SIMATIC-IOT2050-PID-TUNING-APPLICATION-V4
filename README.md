@@ -64,6 +64,7 @@ This application was developed specifically for the **Mitr Phol Pin Mill Plant**
 | **IT (Document)** | Automated Thai/English manual generation, PDF/HTML export, Base64 standalone compiler |
 | **Edge (24/7 Stability)** | **5-Min Smart Idle Auto-Refresh**, Siemens Hardware Watchdog (`/dev/watchdog`), RAM Tmpfs file protection, systemd daemons, self-healing watchdog |
 | **Deploy (Automation)** | Python & PowerShell remote deployment (`deploy_remote.py`, `Deploy-Patch.ps1`) |
+| **Hotfix (V4.1)** | **Watchdog Memory Logic Fixed (Available RAM)**, **True Tmpfs /etc/fstab Injection**, **Duplicate Service Cleanup (`pid-tuning.service`)** |
 
 ---
 
@@ -410,6 +411,6 @@ sudo reboot
 
 *Siemens SIMATIC IOT2050 × S7-1200 × PIDCompact V2*
 
-*Version: V4 (24/7 Industrial Stability Release) - August 2026*
+*Version: V4.1 (24/7 Industrial Stability Hotfix) - August 2026*
 
 </div>
