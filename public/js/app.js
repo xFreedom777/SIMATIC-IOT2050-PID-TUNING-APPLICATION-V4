@@ -72,7 +72,7 @@ let currentOffsets = { ...DEFAULT_OFFSETS };
 let lastUserActivityTime = Date.now();
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 mins
 
-['click', 'touchstart', 'mousemove', 'keydown'].forEach(evt => {
+['click', 'touchstart', 'keydown'].forEach(evt => {
   window.addEventListener(evt, () => { lastUserActivityTime = Date.now(); }, { passive: true });
 });
 
